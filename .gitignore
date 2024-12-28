@@ -1,0 +1,16 @@
+# Ignored files/directories
+
+# Any virtual environment
+.venv
+
+# Content of the chat history folder
+chat_history/*
+!chat_history/.gitkeep
+
+# Content of the logs folder
+logs/*
+!logs/.gitkeep
+
+# Uploaded files
+uploaded_files/*
+!uploaded_files/.gitkeep

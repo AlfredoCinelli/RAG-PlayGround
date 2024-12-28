@@ -1,0 +1,37 @@
+{
+    "settings": {
+        "index": {
+            "number_of_shards": 1,
+            "number_of_replicas": 0,
+            "knn": true
+        }
+    },
+    "mappings": {
+        "properties": {
+            "text": {
+                "type": "text"
+            },
+            "embedding": {
+                "type": "knn_vector",
+                "dimension": "{{EMBEDDING_DIMENSION}}",
+                "method": {
+                    "engine": "faiss",
+                    "space_type": "l2",
+                    "name": "hnsw",
+                    "parameters": {
+                        "encoder": {
+                            "name": "sq",
+                            "parameters": {
+                                "type": "fp16",
+                                "clip": true
+                            }
+                        }
+                    }
+                }
+            },
+            "document_name": {
+                "type": "keyword"
+            }
+        }
+    }
+}
