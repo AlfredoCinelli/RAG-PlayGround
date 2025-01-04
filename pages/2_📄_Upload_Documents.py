@@ -2,11 +2,11 @@
 
 # Import packages, modules and literals
 
-import logging
 import os
 import time
 
 import streamlit as st
+from streamlit.runtime.uploaded_file_manager import UploadedFile
 
 from src.constants import (
     CHUNK_OVERLAP_SIZE,
@@ -20,25 +20,15 @@ from src.ingestion import (
     create_index,
     delete_documents_by_document_name,
 )
+from src.logging import logger
 from src.ocr import extract_text_from_pdf, text_chunking
 from src.opensearch import get_opensearch_client
-from src.utils import apply_custom_css, setup_logging
-
-# Initialize logger
-setup_logging()  # Set up centralized logging configuration
-logger = logging.getLogger(__name__)
 
 
 def render_main_page() -> None:
+    """Function to render the main page."""
     # Set page config with title, icon, and layout
     st.set_page_config(page_title="Upload Documents", page_icon="📂")
-
-    # Custom CSS to style the page and sidebar
-    #st.markdown(
-    #    apply_custom_css(page="document_page"),
-    #    unsafe_allow_html=True,
-    #)
-    #logger.info("Custom CSS applied.")
 
 
 def render_upload_page() -> None:
@@ -46,9 +36,8 @@ def render_upload_page() -> None:
     Renders the document upload page for users to upload and manage PDFs.
     Shows only the documents that are present in the OpenSearch index.
     """
-
     # Add a logo (replace with your own image file path or URL) # Replace with your logo file
-    if os.path.exists(LOGO_PATH):
+    if os.path.exists(LOGO_PATH):  # noqa PLR0915
         st.sidebar.image(LOGO_PATH, width=220, use_container_width=True)
     else:
         st.sidebar.markdown("### Logo Placeholder")
@@ -69,14 +58,14 @@ def render_upload_page() -> None:
 
     # Display the loading spinner at the top for loading the embedding model
     if "embedding_models_loaded" not in st.session_state:
-        with model_loading_placeholder:
+        with model_loading_placeholder:  # noqa SIM117
             with st.spinner("Loading models for document processing..."):
                 get_embedding_model()
                 st.session_state["embedding_models_loaded"] = True
         logger.info("Embedding models loaded.")
         model_loading_placeholder.empty()  # Clear the placeholder after loading
 
-    UPLOAD_DIR = "uploaded_files"
+    UPLOAD_DIR = "uploaded_files"  # noqa n806
     os.makedirs(UPLOAD_DIR, exist_ok=True)
 
     # Initialize OpenSearch client
@@ -104,8 +93,6 @@ def render_upload_page() -> None:
     for document_name in document_names:
         file_path = os.path.join(UPLOAD_DIR, document_name)
         if os.path.exists(file_path):
-            # reader = PdfReader(file_path)
-            # text = "".join([page.extract_text() for page in reader.pages])
             text = extract_text_from_pdf(file_path, to_string=True)
             st.session_state["documents"].append(
                 {"filename": document_name, "content": text, "file_path": file_path}
@@ -154,7 +141,9 @@ def render_upload_page() -> None:
                         "embedding": embedding,
                         "document_name": uploaded_file.name,
                     }
-                    for i, (chunk, embedding) in enumerate(zip(chunks, embeddings))
+                    for i, (chunk, embedding) in enumerate(
+                        zip(chunks, embeddings, strict=False)
+                    )
                 ]
                 bulk_index_documents(documents_to_index)
                 st.session_state["documents"].append(
@@ -203,17 +192,16 @@ def render_upload_page() -> None:
                         st.rerun()
 
 
-def save_uploaded_file(uploaded_file) -> str:  # type: ignore
+def save_uploaded_file(uploaded_file: UploadedFile) -> str:
     """
-    Saves an uploaded file to the local file system.
+    Saves an uploaded file from Streamlit to the local file system (i.e., given directory).
 
-    Args:
-        uploaded_file: The uploaded file to save.
-
-    Returns:
-        str: The file path where the uploaded file is saved.
+    :param uploaded_file: uploaded file instance from Streamlit
+    :type uploaded_file: UploadedFile
+    :return: file path where the uploaded file is saved
+    :rtype: str
     """
-    UPLOAD_DIR = "uploaded_files"
+    UPLOAD_DIR = "uploaded_files"  # noqa N806
     file_path = os.path.join(UPLOAD_DIR, uploaded_file.name)
     with open(file_path, "wb") as f:
         f.write(uploaded_file.getbuffer())

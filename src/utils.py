@@ -4,18 +4,16 @@ Module containig utility functions.
 The main functions defined in the module are:
 
 * check_string_list: Checks if all elements in a list are strings.
-* setup_logging: Sets up logging configuration.
 * clean_text: Cleans text by removing non-alphanumeric characters and converting to lowercase.
 * apply_custom_css: Applies custom CSS styling to the page and sidebar.
 """
 
 # Import packages and modules
 
-import logging
 import re
 from typing import Any, List, Literal
 
-from src.constants import LOG_FILE_PATH
+from src.logging import logger
 
 # Define UDFs
 
@@ -34,27 +32,11 @@ def check_string_list(
     return all(isinstance(element, str) for element in elements)
 
 
-def setup_logging() -> None:
-    """
-    Function to configure logging settings for the application, specifying log file, format, and level.
-
-    :return: None
-    :rtype: None
-    """
-    logging.basicConfig(
-        filename=LOG_FILE_PATH,
-        filemode="a",
-        format="%(asctime)s - %(levelname)s - %(message)s",
-        level=logging.INFO,
-    )
-
-
 def clean_text(text: str, print_log: bool = True) -> str:
     """
     Function to clean OCR-extracted text by removing unnecessary newlines,
     hyphens, and correcting common OCR errors.
 
-    Args:
     :param text: the text to clean
     :type text: str
     :param print_log: whether to print a log message, defaults to True
@@ -76,7 +58,7 @@ def clean_text(text: str, print_log: bool = True) -> str:
 
     cleaned_text = text.strip()
     if print_log is True:
-        logging.info("Text cleaned.")
+        logger.info("Text cleaned.")
     return cleaned_text
 
 
@@ -93,7 +75,6 @@ def apply_custom_css(
     :rtype: str
     :raises ValueError: if the page parameter is not one of the expected values
     """
-
     match page:
         case "main_page":
             css_format = """
@@ -160,7 +141,7 @@ def apply_custom_css(
                 background-color: #006d77;
                 color: white;
                 padding: 20px;
-                border-right: 2px solid #003d5c; 
+                border-right: 2px solid #003d5c;
             }
             .sidebar h2, .sidebar h4 { color: white; }
             .block-container {

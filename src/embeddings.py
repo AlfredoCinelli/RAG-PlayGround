@@ -9,8 +9,7 @@ The main functions of the module are:
 
 # Import packages and modules
 
-import logging
-from typing import List, Union
+from typing import List
 
 import numpy as np
 import streamlit as st
@@ -18,11 +17,7 @@ from langchain_core.documents.base import Document
 from sentence_transformers import SentenceTransformer
 
 from src.constants import EMBEDDING_MODEL_PATH
-from src.utils import check_string_list, setup_logging
-
-# Initialize logger
-setup_logging()  # Configures logging for the application
-logger = logging.getLogger(__name__)
+from src.utils import check_string_list, logger
 
 # Define UDFs
 
@@ -37,13 +32,12 @@ def get_embedding_model() -> SentenceTransformer:
     :return: the loaded embedding model
     :rtype: SentenceTransformer
     """
-
     logger.info(f"Loading embedding model from path: {EMBEDDING_MODEL_PATH}")
     return SentenceTransformer(EMBEDDING_MODEL_PATH)
 
 
 def generate_embeddings(
-    chunks: Union[List[str], str, List[Document], Document],
+    chunks: List[str] | str | List[Document] | Document,
 ) -> List[np.typing.NDArray[np.float32]]:
     """
     Function to generate embeddings from a list of chunked text via

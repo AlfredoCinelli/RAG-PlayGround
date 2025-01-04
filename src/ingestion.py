@@ -10,7 +10,6 @@ The main functions defined in the module are:
 """
 
 import json
-import logging
 from typing import Any, Dict, List, Tuple
 
 from opensearchpy import OpenSearch, helpers
@@ -21,12 +20,8 @@ from src.constants import (
     INDEX_CONFIG_PATH,
     OPENSEARCH_INDEX,
 )
+from src.logging import logger
 from src.opensearch import get_opensearch_client
-from src.utils import setup_logging
-
-# Initialize logger
-setup_logging()
-logger = logging.getLogger(__name__)
 
 
 def load_index_config() -> Dict[str, Any]:
@@ -36,8 +31,7 @@ def load_index_config() -> Dict[str, Any]:
     :return: Dict[str, Any]: the index configuration as a dictionary.
     :rtype: Dict[str, Any]
     """
-
-    with open(INDEX_CONFIG_PATH, "r") as f:
+    with open(INDEX_CONFIG_PATH) as f:
         config = json.load(f)
 
     # Replace the placeholder with the actual embedding dimension

@@ -9,8 +9,7 @@ The main functions of the module are:
 
 # Import packages and modules
 
-import logging
-from typing import List, Literal, Union
+from typing import List, Literal
 
 from langchain_community.document_loaders import PyPDFLoader, UnstructuredPDFLoader
 from langchain_core.documents.base import Document
@@ -19,11 +18,8 @@ from langchain_text_splitters import (
     RecursiveCharacterTextSplitter,
 )
 
-from src.utils import clean_text, setup_logging
-
-# Configure logging
-setup_logging()
-logger = logging.getLogger(__name__)
+from src.logging import logger
+from src.utils import clean_text
 
 # Define literals
 
@@ -38,7 +34,7 @@ TEXT_SPLITTER = {
 def extract_text_from_pdf(
     file_path: str,
     to_string: bool = False,
-) -> Union[str, List[Document]]:
+) -> str | List[Document]:
     """
     Function to extract text from a PDF file.
 
@@ -49,7 +45,6 @@ def extract_text_from_pdf(
     :return: PDF content as string or langchain Document objects
     :rtype: Union[str, List[Document]]
     """
-
     try:
         pdf_reader = PyPDFLoader(file_path, extract_images=True)
         logger.info(f"Opened PDF via PyPDFLoader for text extraction: {file_path}.")
@@ -79,13 +74,13 @@ def extract_text_from_pdf(
 
 
 def text_chunking(
-    text: Union[str, List[Document]],
+    text: str | List[Document],
     chunk_size: int,
     overlap: int,
     mode: Literal["text", "length"] = "text",
     tokenization: bool = False,
     to_string: bool = True,
-) -> List[Union[str, Document]]:
+) -> List[str | Document]:
     """
     Function to recursively chunk text given the chunk size and overlap.
 
@@ -102,7 +97,6 @@ def text_chunking(
     :return: list of chunks from the given text
     :rtype: List[Union[str, Document]]
     """
-
     text_splitter = (
         TEXT_SPLITTER.get(mode)(  # type: ignore
             chunk_size=chunk_size,

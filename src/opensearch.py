@@ -11,17 +11,12 @@ The main functions of the module are:
 
 # Import packages and modules
 
-import logging
 from typing import Any, Dict, List
 
 from opensearchpy import OpenSearch
 
 from src.constants import OPENSEARCH_HOST, OPENSEARCH_INDEX, OPENSEARCH_PORT
-from src.utils import setup_logging
-
-# Initialize logger
-setup_logging()
-logger = logging.getLogger(__name__)
+from src.logging import logger
 
 #  Define UDFs
 
