@@ -4,9 +4,8 @@ path="$1"
 echo "Run on this path: $path" 
 read -p "Do you want to run linters in dynamic mode?: y/n " type_run
 if [[ "$type_run" == "n" ]]; then
-    ruff $path
-    isort $path
-    black $path
+    ruff check $path
+    ruff format $path
     mypy $path --pretty
 else
     # Ruff section
@@ -21,23 +20,15 @@ else
         fi
     fi
 
-    # Isort section
+    # Black section (via Ruff)
 
-    read -p "Do you want to run isort?: y/n " run_isort
-    if [[ "$run_isort" == "y" ]]; then 
-        isort $path
-    fi
-
-    # Black section
-
-    read -p "Do you want to run black?: y/n " run_black
-    if [[ "$run_isort" == "y" ]]; then 
-        black $path
+    read -p "Do you want to run black (via Ruff)?: y/n " run_black
+    if [[ "$run_black" == "y" ]]; then 
+        ruff format $path
     fi
 
     # Mypy section
 
-    #cd .. || exit
     read -p "Do you want to run mypy?: y/n " run_mypy
     if [[ "$run_mypy" == "y" ]]; then 
         mypy $path --pretty

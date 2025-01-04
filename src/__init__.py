@@ -12,6 +12,10 @@ More in details:
 * utils.py: Module containing utility functions.
 """
 
+import warnings
+
 from dotenv import load_dotenv
+
+warnings.filterwarnings("ignore")
 
 load_dotenv("conf/.env")

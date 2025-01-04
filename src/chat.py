@@ -16,9 +16,8 @@ The main functions of the module are:
 
 # Import packages and modules
 
-import logging
 import os
-from typing import Any, Dict, Iterator, List, Literal, Mapping, Optional, Union
+from typing import Any, Dict, Iterator, List, Literal, Mapping
 
 import ollama
 import pandas as pd
@@ -27,12 +26,8 @@ from sentence_transformers.cross_encoder import CrossEncoder
 
 from src.constants import ASSYMETRIC_EMBEDDING, MODEL_NAMES, RERANKER_MODEL_PATH
 from src.embeddings import generate_embeddings
-from src.opensearch import hybrid_search, lexical_search, vector_search
-from src.utils import setup_logging
-
-# Initialize logger
-setup_logging()
-logger = logging.getLogger(__name__)
+from src.logging import logger
+from src.opensearch.retrieval import OpenSearchRetriever
 
 # Define UDFs
 
@@ -47,7 +42,6 @@ def ensure_model_pulled(model: str) -> bool:
     :return: True if the model is available or successfully pulled, False if an error occurs
     :rtype: bool
     """
-
     try:
         available_models = ollama.list()
         if model not in available_models:
@@ -66,7 +60,7 @@ def run_ollama_streaming(
     model: str,
     prompt: str,
     temperature: float,
-) -> Optional[Iterator[Mapping[str, Any]]]:
+) -> Iterator[Mapping[str, Any]] | None:
     """
     Function to call Ollama's Python library to run the chosen model with streaming enabled.
 
@@ -153,7 +147,7 @@ def prompt_template(
 
 def get_context_components(
     search_results: str,
-) -> Dict[str, Union[str, int]]:
+) -> Dict[str, str | int]:
     """
     Function to extract the context components from the search results.
 
@@ -187,15 +181,17 @@ def generate_response_streaming(
     search_type: Literal["hybrid", "vector", "keyword", "reranking"],
     num_results: int,
     temperature: float,
-    chat_history: Optional[List[Dict[str, str]]] = None,
+    chat_history: List[Dict[str, str]] | None = None,
     return_sources: bool = False,
-) -> Optional[Iterator[Mapping[str, Any]]]:
+) -> Iterator[Mapping[str, Any]] | None:
     """
     Function to generate a chatbot response by incorporating conversation history
     and context based on the following search techniques:
         * lexical using Okapi BM25
-        * vector using L2 score with ANN (HSNW)
-        * hybrid search using both lexical and vector search with RSF with [03, 0.7] weights.
+        * vector using ANN
+        * hybrid search using both lexical and vector search with RSF with custom weights.
+
+    To know more about the search techniques, please refer to the OpenSearch config file (conf/*.json files).
 
     :param model: name of the model (e.g., llama3.2:1b for Meta Llama 3.2 1B)
     :type model: str
@@ -227,18 +223,16 @@ def generate_response_streaming(
 
     if use_rag is True:
         logger.info("Performing RAG search.")
+        retriever = OpenSearchRetriever()
         # Apply the chosen search type
         match search_type:
             case "hybrid":
                 logger.info("Performing hybrid search.")
-                if ASSYMETRIC_EMBEDDING:
-                    prefixed_query = f"passage: {query}"
-                else:
-                    prefixed_query = f"{query}"
+                prefixed_query = f"passage: {query}" if ASSYMETRIC_EMBEDDING else f"{query}"
                 query_embedding = generate_embeddings(
                     prefixed_query,
                 )
-                search_results = hybrid_search(
+                search_results = retriever.hybrid_search(
                     query,
                     query_embedding,  # type: ignore
                     top_k=num_results,
@@ -249,7 +243,7 @@ def generate_response_streaming(
                 query_embedding = generate_embeddings(
                     query,
                 )
-                search_results = vector_search(
+                search_results = retriever.vector_search(
                     query,
                     query_embedding,  # type: ignore
                     top_k=num_results,
@@ -257,23 +251,21 @@ def generate_response_streaming(
                 logger.info("Vector search completed.")
             case "keyword":
                 logger.info("Performing lexical search.")
-                search_results = lexical_search(
+                search_results = retriever.lexical_search(
                     query,
                     top_k=num_results,
                 )
                 logger.info("Lexical search completed.")
             case "reranking":
-                logger.info(
-                    "Performing rerankink on lexical and vector search results."
-                )
+                logger.info("Performing reranking on lexical and vector search results.")
                 query_embedding = generate_embeddings(
                     query,
                 )
-                lexical_search_results = lexical_search(
+                lexical_search_results = retriever.lexical_search(
                     query,
                     top_k=num_results,
                 )
-                vector_search_results = vector_search(
+                vector_search_results = retriever.vector_search(
                     query,
                     query_embedding,  # type: ignore
                     top_k=num_results,
@@ -286,7 +278,7 @@ def generate_response_streaming(
                 )
 
         # Collect text from search results
-        for i, result in enumerate(search_results):
+        for result in search_results:
             context_components = get_context_components(
                 result["_source"]["text"],
             )
@@ -318,12 +310,11 @@ def aggregate_search_results(
     :return: dictionary with lexical and vector search results as values and extracted text as key
     :rtype: Dict[str, Dict[str, Any]]
     """
-
     aggregated_search_results = {}
     logger.info("Aggregating results from lexical and vector search.")
 
     for lexical_result, vector_result in zip(
-        lexical_search_results, vector_search_results
+        lexical_search_results, vector_search_results, strict=False
     ):
         lexical_document, vector_document = (
             get_context_components(
@@ -372,9 +363,7 @@ def rerank_search_results(
         lexical_search_results,
         vector_search_results,
     )
-    logger.info(
-        f"Using model {RERANKER_MODEL_PATH} as cross-encoder to rerank search results."
-    )
+    logger.info(f"Using model {RERANKER_MODEL_PATH} as cross-encoder to rerank search results.")
     model = CrossEncoder(RERANKER_MODEL_PATH)
     corpus = list(aggregated_search_results.keys())
 
@@ -411,7 +400,6 @@ def dump_chat(
     :return: dump the chat history as a csv file in the given directory
     :rtype: None
     """
-
     if chat_history:
         if not os.path.exists(directory):
             os.makedirs(directory)
@@ -427,7 +415,7 @@ def load_chat(
     chat_history: List[Dict[str, str]],
     directory: str = "chat_history",
     file_name: str = "chat.csv",
-) -> str:
+) -> bytes:
     """
     Function to load the chat as csv file.
 
@@ -438,7 +426,7 @@ def load_chat(
     :param file_name: name of the chat csv file, defaults to "chat.csv"
     :type file_name: str, optional
     :return: chat history as csv (string file)
-    :rtype: str
+    :rtype: bytes
     """
     # Dump chat as csv
     dump_chat(chat_history, directory, file_name)

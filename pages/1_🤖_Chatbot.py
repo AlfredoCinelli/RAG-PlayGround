@@ -2,36 +2,23 @@
 
 # Import packages, modules and literals
 
-import logging
 import os
 
 import streamlit as st
 
 from src.chat import generate_response_streaming, load_chat
 from src.constants import LOGO_PATH, MODEL_NAMES
-from src.ingestion import create_index
-from src.opensearch import get_opensearch_client
-from src.utils import apply_custom_css, setup_logging
-
-# Initialize logger
-setup_logging()  # Configures logging for the application
-logger = logging.getLogger(__name__)
+from src.logging import logger
 
 
 def render_main_page() -> None:
-    # Set page configuration
+    """Function to render main page."""
     st.set_page_config(page_title="Chatbot", page_icon="🤖")
-
-    # Apply custom CSS
-    #st.markdown(
-    #    apply_custom_css(page="chat_page"),
-    #    unsafe_allow_html=True,
-    #)
-    #logger.info("Custom CSS applied.")
 
 
 # Main chatbot page rendering function
 def render_chatbot_page() -> None:
+    """Function to render the Chatbot page."""
     # Set up a placeholder at the very top of the main content area
     st.title("Chatbot 🤖")
     model_loading_placeholder = st.empty()
@@ -49,13 +36,6 @@ def render_chatbot_page() -> None:
         st.session_state["search_type"] = None
     if "model_name" not in st.session_state:
         st.session_state["model_name"] = None
-
-    # Initialize OpenSearch client
-    with st.spinner("Connecting to OpenSearch..."):
-        client = get_opensearch_client()
-
-    # Ensure the index exists
-    create_index(client)
 
     # Sidebar settings for app behaviour
     st.session_state["model_name"] = st.sidebar.selectbox(
@@ -98,9 +78,7 @@ def render_chatbot_page() -> None:
     logger.info(f"LLM chosen is: {str(st.session_state['model_name'])}")
     logger.info(f"RAG search set to: {str(st.session_state['use_rag'])}")
     logger.info(f"Search type set to: {str(st.session_state['search_type'])}")
-    logger.info(
-        f"Maximum retrieved chunks set to: {str(st.session_state['num_results'])}"
-    )
+    logger.info(f"Maximum retrieved chunks set to: {str(st.session_state['num_results'])}")
     logger.info(f"Response temperature set to: {str(st.session_state['temperature'])}")
     logger.info(f"Sources set to: {str(st.session_state['sources'])}")
 
@@ -129,7 +107,7 @@ def render_chatbot_page() -> None:
 
     # Load model if not already loaded
     if "embedding_models_loaded" not in st.session_state:
-        with model_loading_placeholder:
+        with model_loading_placeholder:  # noqa: SIM117
             with st.spinner("Loading Embedding for RAG Search..."):
                 st.session_state["embedding_models_loaded"] = True
         logger.info("Embedding model loaded.")
@@ -182,9 +160,7 @@ def render_chatbot_page() -> None:
                         logger.error("Unexpected chunk format in response stream.")
 
             response_placeholder.markdown(response_text)
-            st.session_state["chat_history"].append(
-                {"role": "assistant", "content": response_text}
-            )
+            st.session_state["chat_history"].append({"role": "assistant", "content": response_text})
             logger.info("Response generated and displayed.")
 
     if st.session_state["chat_history"]:

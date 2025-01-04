@@ -2,11 +2,11 @@
 
 # Import packages, modules and literals
 
-import logging
 import os
 import time
 
 import streamlit as st
+from streamlit.runtime.uploaded_file_manager import UploadedFile
 
 from src.constants import (
     CHUNK_OVERLAP_SIZE,
@@ -15,30 +15,15 @@ from src.constants import (
     TEXT_CHUNK_SIZE,
 )
 from src.embeddings import generate_embeddings, get_embedding_model
-from src.ingestion import (
-    bulk_index_documents,
-    create_index,
-    delete_documents_by_document_name,
-)
+from src.logging import logger
 from src.ocr import extract_text_from_pdf, text_chunking
-from src.opensearch import get_opensearch_client
-from src.utils import apply_custom_css, setup_logging
-
-# Initialize logger
-setup_logging()  # Set up centralized logging configuration
-logger = logging.getLogger(__name__)
+from src.opensearch.indexing import OpenSearchIndex
 
 
 def render_main_page() -> None:
+    """Function to render the main page."""
     # Set page config with title, icon, and layout
     st.set_page_config(page_title="Upload Documents", page_icon="📂")
-
-    # Custom CSS to style the page and sidebar
-    #st.markdown(
-    #    apply_custom_css(page="document_page"),
-    #    unsafe_allow_html=True,
-    #)
-    #logger.info("Custom CSS applied.")
 
 
 def render_upload_page() -> None:
@@ -46,9 +31,8 @@ def render_upload_page() -> None:
     Renders the document upload page for users to upload and manage PDFs.
     Shows only the documents that are present in the OpenSearch index.
     """
-
     # Add a logo (replace with your own image file path or URL) # Replace with your logo file
-    if os.path.exists(LOGO_PATH):
+    if os.path.exists(LOGO_PATH):  # noqa PLR0915
         st.sidebar.image(LOGO_PATH, width=220, use_container_width=True)
     else:
         st.sidebar.markdown("### Logo Placeholder")
@@ -69,23 +53,21 @@ def render_upload_page() -> None:
 
     # Display the loading spinner at the top for loading the embedding model
     if "embedding_models_loaded" not in st.session_state:
-        with model_loading_placeholder:
+        with model_loading_placeholder:  # noqa SIM117
             with st.spinner("Loading models for document processing..."):
                 get_embedding_model()
                 st.session_state["embedding_models_loaded"] = True
         logger.info("Embedding models loaded.")
         model_loading_placeholder.empty()  # Clear the placeholder after loading
 
-    UPLOAD_DIR = "uploaded_files"
+    UPLOAD_DIR = "uploaded_files"  # noqa n806
     os.makedirs(UPLOAD_DIR, exist_ok=True)
 
     # Initialize OpenSearch client
     with st.spinner("Connecting to OpenSearch..."):
-        client = get_opensearch_client()
-    index_name = OPENSEARCH_INDEX
-
-    # Ensure the index exists
-    create_index(client)
+        index = OpenSearchIndex()
+        index_name = OPENSEARCH_INDEX  # reference to index
+        index.create_index()  # ensure the index exists
 
     # Initialize or clear the documents list in session state
     st.session_state["documents"] = []
@@ -95,7 +77,7 @@ def render_upload_page() -> None:
         "size": 0,
         "aggs": {"unique_docs": {"terms": {"field": "document_name", "size": 10000}}},
     }
-    response = client.search(index=index_name, body=query)
+    response = index.client.search(index=index_name, body=query)
     buckets = response["aggregations"]["unique_docs"]["buckets"]
     document_names = [bucket["key"] for bucket in buckets]
     logger.info("Retrieved document names from OpenSearch.")
@@ -104,8 +86,6 @@ def render_upload_page() -> None:
     for document_name in document_names:
         file_path = os.path.join(UPLOAD_DIR, document_name)
         if os.path.exists(file_path):
-            # reader = PdfReader(file_path)
-            # text = "".join([page.extract_text() for page in reader.pages])
             text = extract_text_from_pdf(file_path, to_string=True)
             st.session_state["documents"].append(
                 {"filename": document_name, "content": text, "file_path": file_path}
@@ -117,9 +97,7 @@ def render_upload_page() -> None:
             logger.warning(f"File '{document_name}' does not exist locally.")
 
     if "deleted_file" in st.session_state:
-        st.success(
-            f"The file '{st.session_state['deleted_file']}' was successfully deleted."
-        )
+        st.success(f"The file '{st.session_state['deleted_file']}' was successfully deleted.")
         del st.session_state["deleted_file"]
 
     # Allow users to upload PDF files
@@ -131,12 +109,10 @@ def render_upload_page() -> None:
         with st.spinner("Uploading and processing documents. Please wait..."):
             for uploaded_file in uploaded_files:
                 if uploaded_file.name in document_names:
-                    st.warning(
-                        f"The file '{uploaded_file.name}' already exists in the index."
-                    )
+                    st.warning(f"The file '{uploaded_file.name}' already exists in the index.")
                     continue
 
-                file_path = save_uploaded_file(uploaded_file)
+                file_path = save_uploaded_file(uploaded_file)  # TODO: move the function to utils
                 text = extract_text_from_pdf(file_path, to_string=False)
                 chunks = text_chunking(
                     text,
@@ -154,9 +130,9 @@ def render_upload_page() -> None:
                         "embedding": embedding,
                         "document_name": uploaded_file.name,
                     }
-                    for i, (chunk, embedding) in enumerate(zip(chunks, embeddings))
+                    for i, (chunk, embedding) in enumerate(zip(chunks, embeddings, strict=False))
                 ]
-                bulk_index_documents(documents_to_index)
+                index.bulk_index_documents(documents_to_index)
                 st.session_state["documents"].append(
                     {
                         "filename": uploaded_file.name,
@@ -186,34 +162,27 @@ def render_upload_page() -> None:
                         if doc["file_path"] and os.path.exists(doc["file_path"]):
                             try:
                                 os.remove(doc["file_path"])
-                                logger.info(
-                                    f"Deleted file '{doc['filename']}' from filesystem."
-                                )
+                                logger.info(f"Deleted file '{doc['filename']}' from file system.")
                             except FileNotFoundError:
-                                st.error(
-                                    f"File '{doc['filename']}' not found in filesystem."
-                                )
-                                logger.error(
-                                    f"File '{doc['filename']}' not found during deletion."
-                                )
-                        delete_documents_by_document_name(doc["filename"])
+                                st.error(f"File '{doc['filename']}' not found in file system.")
+                                logger.error(f"File '{doc['filename']}' not found during deletion.")
+                        index.delete_documents_by_name(doc["filename"])
                         st.session_state["documents"].pop(idx - 1)
                         st.session_state["deleted_file"] = doc["filename"]
                         time.sleep(0.5)
                         st.rerun()
 
 
-def save_uploaded_file(uploaded_file) -> str:  # type: ignore
+def save_uploaded_file(uploaded_file: UploadedFile) -> str:
     """
-    Saves an uploaded file to the local file system.
+    Saves an uploaded file from Streamlit to the local file system (i.e., given directory).
 
-    Args:
-        uploaded_file: The uploaded file to save.
-
-    Returns:
-        str: The file path where the uploaded file is saved.
+    :param uploaded_file: uploaded file instance from Streamlit
+    :type uploaded_file: UploadedFile
+    :return: file path where the uploaded file is saved
+    :rtype: str
     """
-    UPLOAD_DIR = "uploaded_files"
+    UPLOAD_DIR = "uploaded_files"  # noqa N806
     file_path = os.path.join(UPLOAD_DIR, uploaded_file.name)
     with open(file_path, "wb") as f:
         f.write(uploaded_file.getbuffer())

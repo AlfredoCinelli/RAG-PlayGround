@@ -14,3 +14,10 @@ logs/*
 # Uploaded files
 uploaded_files/*
 !uploaded_files/.gitkeep
+
+# Ohter files
+.DS_Store
+*cache*
+sketch.txt
+__pycache__
+TODO.md
