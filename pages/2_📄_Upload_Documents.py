@@ -15,14 +15,9 @@ from src.constants import (
     TEXT_CHUNK_SIZE,
 )
 from src.embeddings import generate_embeddings, get_embedding_model
-from src.ingestion import (
-    bulk_index_documents,
-    create_index,
-    delete_documents_by_document_name,
-)
 from src.logging import logger
 from src.ocr import extract_text_from_pdf, text_chunking
-from src.opensearch import get_opensearch_client
+from src.opensearch.indexing import OpenSearchIndex
 
 
 def render_main_page() -> None:
@@ -70,11 +65,9 @@ def render_upload_page() -> None:
 
     # Initialize OpenSearch client
     with st.spinner("Connecting to OpenSearch..."):
-        client = get_opensearch_client()
-    index_name = OPENSEARCH_INDEX
-
-    # Ensure the index exists
-    create_index(client)
+        index = OpenSearchIndex()
+        index_name = OPENSEARCH_INDEX  # reference to index
+        index.create_index()  # ensure the index exists
 
     # Initialize or clear the documents list in session state
     st.session_state["documents"] = []
@@ -84,7 +77,7 @@ def render_upload_page() -> None:
         "size": 0,
         "aggs": {"unique_docs": {"terms": {"field": "document_name", "size": 10000}}},
     }
-    response = client.search(index=index_name, body=query)
+    response = index.client.search(index=index_name, body=query)
     buckets = response["aggregations"]["unique_docs"]["buckets"]
     document_names = [bucket["key"] for bucket in buckets]
     logger.info("Retrieved document names from OpenSearch.")
@@ -104,9 +97,7 @@ def render_upload_page() -> None:
             logger.warning(f"File '{document_name}' does not exist locally.")
 
     if "deleted_file" in st.session_state:
-        st.success(
-            f"The file '{st.session_state['deleted_file']}' was successfully deleted."
-        )
+        st.success(f"The file '{st.session_state['deleted_file']}' was successfully deleted.")
         del st.session_state["deleted_file"]
 
     # Allow users to upload PDF files
@@ -118,12 +109,10 @@ def render_upload_page() -> None:
         with st.spinner("Uploading and processing documents. Please wait..."):
             for uploaded_file in uploaded_files:
                 if uploaded_file.name in document_names:
-                    st.warning(
-                        f"The file '{uploaded_file.name}' already exists in the index."
-                    )
+                    st.warning(f"The file '{uploaded_file.name}' already exists in the index.")
                     continue
 
-                file_path = save_uploaded_file(uploaded_file)
+                file_path = save_uploaded_file(uploaded_file)  # TODO: move the function to utils
                 text = extract_text_from_pdf(file_path, to_string=False)
                 chunks = text_chunking(
                     text,
@@ -141,11 +130,9 @@ def render_upload_page() -> None:
                         "embedding": embedding,
                         "document_name": uploaded_file.name,
                     }
-                    for i, (chunk, embedding) in enumerate(
-                        zip(chunks, embeddings, strict=False)
-                    )
+                    for i, (chunk, embedding) in enumerate(zip(chunks, embeddings, strict=False))
                 ]
-                bulk_index_documents(documents_to_index)
+                index.bulk_index_documents(documents_to_index)
                 st.session_state["documents"].append(
                     {
                         "filename": uploaded_file.name,
@@ -175,17 +162,11 @@ def render_upload_page() -> None:
                         if doc["file_path"] and os.path.exists(doc["file_path"]):
                             try:
                                 os.remove(doc["file_path"])
-                                logger.info(
-                                    f"Deleted file '{doc['filename']}' from filesystem."
-                                )
+                                logger.info(f"Deleted file '{doc['filename']}' from file system.")
                             except FileNotFoundError:
-                                st.error(
-                                    f"File '{doc['filename']}' not found in filesystem."
-                                )
-                                logger.error(
-                                    f"File '{doc['filename']}' not found during deletion."
-                                )
-                        delete_documents_by_document_name(doc["filename"])
+                                st.error(f"File '{doc['filename']}' not found in file system.")
+                                logger.error(f"File '{doc['filename']}' not found during deletion.")
+                        index.delete_documents_by_name(doc["filename"])
                         st.session_state["documents"].pop(idx - 1)
                         st.session_state["deleted_file"] = doc["filename"]
                         time.sleep(0.5)

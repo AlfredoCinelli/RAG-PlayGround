@@ -8,9 +8,7 @@ import streamlit as st
 
 from src.chat import generate_response_streaming, load_chat
 from src.constants import LOGO_PATH, MODEL_NAMES
-from src.ingestion import create_index
 from src.logging import logger
-from src.opensearch import get_opensearch_client
 
 
 def render_main_page() -> None:
@@ -38,13 +36,6 @@ def render_chatbot_page() -> None:
         st.session_state["search_type"] = None
     if "model_name" not in st.session_state:
         st.session_state["model_name"] = None
-
-    # Initialize OpenSearch client
-    with st.spinner("Connecting to OpenSearch..."):
-        client = get_opensearch_client()
-
-    # Ensure the index exists
-    create_index(client)
 
     # Sidebar settings for app behaviour
     st.session_state["model_name"] = st.sidebar.selectbox(
@@ -87,9 +78,7 @@ def render_chatbot_page() -> None:
     logger.info(f"LLM chosen is: {str(st.session_state['model_name'])}")
     logger.info(f"RAG search set to: {str(st.session_state['use_rag'])}")
     logger.info(f"Search type set to: {str(st.session_state['search_type'])}")
-    logger.info(
-        f"Maximum retrieved chunks set to: {str(st.session_state['num_results'])}"
-    )
+    logger.info(f"Maximum retrieved chunks set to: {str(st.session_state['num_results'])}")
     logger.info(f"Response temperature set to: {str(st.session_state['temperature'])}")
     logger.info(f"Sources set to: {str(st.session_state['sources'])}")
 
@@ -171,9 +160,7 @@ def render_chatbot_page() -> None:
                         logger.error("Unexpected chunk format in response stream.")
 
             response_placeholder.markdown(response_text)
-            st.session_state["chat_history"].append(
-                {"role": "assistant", "content": response_text}
-            )
+            st.session_state["chat_history"].append({"role": "assistant", "content": response_text})
             logger.info("Response generated and displayed.")
 
     if st.session_state["chat_history"]:
