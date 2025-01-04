@@ -4,7 +4,9 @@
 EMBEDDING_MODEL_PATH = "thenlper/gte-base"  # (gte-large) OR Path of local eg. "embedding_model/"" or the name of SentenceTransformer model eg. "sentence-transformers/all-mpnet-base-v2" from Hugging Face
 RERANKER_MODEL_PATH = "cross-encoder/ms-marco-MiniLM-L-12-v2"  # path to the HuggingFace model for reranking (eg. "cross-encoder/ms-marco-MiniLM-L-6-v2")
 ASSYMETRIC_EMBEDDING = False  # Flag for asymmetric embedding
-EMBEDDING_DIMENSION = 768  # Embedding model settings (728 for mpnet-v2 - 768 for gte-base - 1024 for gte-large)
+EMBEDDING_DIMENSION = (
+    768  # Embedding model settings (728 for mpnet-v2 - 768 for gte-base - 1024 for gte-large)
+)
 TEXT_CHUNK_SIZE = 450  # Maximum number of characters in each text chunk for (align with embedding dimension, for istance 512 token for gte-large)
 CHUNK_OVERLAP_SIZE = 50  # Number of characters to overlap between chunks
 

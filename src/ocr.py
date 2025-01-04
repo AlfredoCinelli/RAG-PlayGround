@@ -51,9 +51,7 @@ def extract_text_from_pdf(
         page_full_content = pdf_reader.load()
     except ValueError:
         pdf_reader = UnstructuredPDFLoader(file_path)  # type: ignore
-        logger.info(
-            f"Opened PDF via UnstructuredPDFLoader for text extraction: {file_path}."
-        )
+        logger.info(f"Opened PDF via UnstructuredPDFLoader for text extraction: {file_path}.")
         page_full_content = pdf_reader.load()
 
     logger.info(f"Extracted text from PDF file: {file_path}.")
@@ -109,9 +107,7 @@ def text_chunking(
             chunk_overlap=overlap,
         )
     )
-    logger.info(
-        f"Chunking text into chunks of size {chunk_size} and overlap {overlap}."
-    )
+    logger.info(f"Chunking text into chunks of size {chunk_size} and overlap {overlap}.")
     chunks = text_splitter.split_documents(text)
     logger.info("Successfully chunked text.")
     cleaned_chunks = [

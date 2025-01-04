@@ -27,7 +27,7 @@ from sentence_transformers.cross_encoder import CrossEncoder
 from src.constants import ASSYMETRIC_EMBEDDING, MODEL_NAMES, RERANKER_MODEL_PATH
 from src.embeddings import generate_embeddings
 from src.logging import logger
-from src.opensearch import hybrid_search, lexical_search, vector_search
+from src.opensearch.retrieval import OpenSearchRetriever
 
 # Define UDFs
 
@@ -188,8 +188,10 @@ def generate_response_streaming(
     Function to generate a chatbot response by incorporating conversation history
     and context based on the following search techniques:
         * lexical using Okapi BM25
-        * vector using L2 score with ANN (HSNW)
-        * hybrid search using both lexical and vector search with RSF with [03, 0.7] weights.
+        * vector using ANN
+        * hybrid search using both lexical and vector search with RSF with custom weights.
+
+    To know more about the search techniques, please refer to the OpenSearch config file (conf/*.json files).
 
     :param model: name of the model (e.g., llama3.2:1b for Meta Llama 3.2 1B)
     :type model: str
@@ -221,18 +223,16 @@ def generate_response_streaming(
 
     if use_rag is True:
         logger.info("Performing RAG search.")
+        retriever = OpenSearchRetriever()
         # Apply the chosen search type
         match search_type:
             case "hybrid":
                 logger.info("Performing hybrid search.")
-                if ASSYMETRIC_EMBEDDING:
-                    prefixed_query = f"passage: {query}"
-                else:
-                    prefixed_query = f"{query}"
+                prefixed_query = f"passage: {query}" if ASSYMETRIC_EMBEDDING else f"{query}"
                 query_embedding = generate_embeddings(
                     prefixed_query,
                 )
-                search_results = hybrid_search(
+                search_results = retriever.hybrid_search(
                     query,
                     query_embedding,  # type: ignore
                     top_k=num_results,
@@ -243,7 +243,7 @@ def generate_response_streaming(
                 query_embedding = generate_embeddings(
                     query,
                 )
-                search_results = vector_search(
+                search_results = retriever.vector_search(
                     query,
                     query_embedding,  # type: ignore
                     top_k=num_results,
@@ -251,23 +251,21 @@ def generate_response_streaming(
                 logger.info("Vector search completed.")
             case "keyword":
                 logger.info("Performing lexical search.")
-                search_results = lexical_search(
+                search_results = retriever.lexical_search(
                     query,
                     top_k=num_results,
                 )
                 logger.info("Lexical search completed.")
             case "reranking":
-                logger.info(
-                    "Performing rerankink on lexical and vector search results."
-                )
+                logger.info("Performing reranking on lexical and vector search results.")
                 query_embedding = generate_embeddings(
                     query,
                 )
-                lexical_search_results = lexical_search(
+                lexical_search_results = retriever.lexical_search(
                     query,
                     top_k=num_results,
                 )
-                vector_search_results = vector_search(
+                vector_search_results = retriever.vector_search(
                     query,
                     query_embedding,  # type: ignore
                     top_k=num_results,
@@ -365,9 +363,7 @@ def rerank_search_results(
         lexical_search_results,
         vector_search_results,
     )
-    logger.info(
-        f"Using model {RERANKER_MODEL_PATH} as cross-encoder to rerank search results."
-    )
+    logger.info(f"Using model {RERANKER_MODEL_PATH} as cross-encoder to rerank search results.")
     model = CrossEncoder(RERANKER_MODEL_PATH)
     corpus = list(aggregated_search_results.keys())
 
