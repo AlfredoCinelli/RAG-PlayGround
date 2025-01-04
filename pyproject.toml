@@ -23,8 +23,6 @@ dependencies = [
     "tiktoken==0.8.0",
     "watchdog==5.0.3",
     "ruff==0.7.3",
-    "black==24.10.0",
-    "isort==5.13.2",
     "mypy==1.13.0",
     "python-dotenv>=1.0.1",
     "langchain-huggingface>=0.1.2",
@@ -76,6 +74,8 @@ show_error_codes = true
 disable_error_code = "operator,var-annotated,unreachable,func-returns-value,union-attr"
 
 [tool.ruff]
+# Linting section
+
 lint.select = [
     "I", # isort
     "E", # pycodestyle
@@ -142,4 +142,11 @@ lint.pylint.max-args = 10 # maximum number of arguments in a function (imho)
 lint.pylint.max-returns = 10 # maximum number of returns in a function (imho)
 lint.pylint.max-branches = 30 # maximum number of branches in a function (imho)
 lint.pylint.max-statements = 100 # maximum number of statements in a function (imho)
+
+# Format section (Black compatible)
+
+format.quote-style = "double" # double quotes (PEP8 and PEP257 compliant)
+format.docstring-code-format = true # format code examples in docstrings
+line-length = 100 # line length of maximum 100 characters
+
 
