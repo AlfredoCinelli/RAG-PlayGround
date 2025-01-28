@@ -14,7 +14,7 @@ from src.logging import logger
 
 # Set page config with title, icon, and layout
 def render_main_page() -> None:
-    """Fumction to render the main page."""
+    """Function to render the main page."""
     st.set_page_config(page_title="App", page_icon="🤖")
 
 
