@@ -6,7 +6,6 @@ import os
 import time
 
 import streamlit as st
-from streamlit.runtime.uploaded_file_manager import UploadedFile
 
 from src.constants import (
     CHUNK_OVERLAP_SIZE,
@@ -14,10 +13,11 @@ from src.constants import (
     OPENSEARCH_INDEX,
     TEXT_CHUNK_SIZE,
 )
-from src.embeddings import generate_embeddings, get_embedding_model
+from src.encoders import EmbeddingModel
+from src.ingestion import DocumentLoader, DocumentSplitter
 from src.logging import logger
-from src.ocr import extract_text_from_pdf, text_chunking
 from src.opensearch.indexing import OpenSearchIndex
+from src.utils import save_uploaded_file
 
 
 def render_main_page() -> None:
@@ -48,17 +48,6 @@ def render_upload_page() -> None:
         unsafe_allow_html=True,
     )
     st.title("Upload Documents 📄")
-    # Placeholder for the loading spinner at the top
-    model_loading_placeholder = st.empty()
-
-    # Display the loading spinner at the top for loading the embedding model
-    if "embedding_models_loaded" not in st.session_state:
-        with model_loading_placeholder:  # noqa SIM117
-            with st.spinner("Loading models for document processing..."):
-                get_embedding_model()
-                st.session_state["embedding_models_loaded"] = True
-        logger.info("Embedding models loaded.")
-        model_loading_placeholder.empty()  # Clear the placeholder after loading
 
     UPLOAD_DIR = "uploaded_files"  # noqa n806
     os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -86,14 +75,11 @@ def render_upload_page() -> None:
     for document_name in document_names:
         file_path = os.path.join(UPLOAD_DIR, document_name)
         if os.path.exists(file_path):
-            text = extract_text_from_pdf(file_path, to_string=True)
             st.session_state["documents"].append(
-                {"filename": document_name, "content": text, "file_path": file_path}
+                {"filename": document_name, "file_path": file_path}
             )
         else:
-            st.session_state["documents"].append(
-                {"filename": document_name, "content": "", "file_path": None}
-            )
+            st.session_state["documents"].append({"filename": document_name, "file_path": None})
             logger.warning(f"File '{document_name}' does not exist locally.")
 
     if "deleted_file" in st.session_state:
@@ -112,16 +98,15 @@ def render_upload_page() -> None:
                     st.warning(f"The file '{uploaded_file.name}' already exists in the index.")
                     continue
 
-                file_path = save_uploaded_file(uploaded_file)  # TODO: move the function to utils
-                text = extract_text_from_pdf(file_path, to_string=False)
-                chunks = text_chunking(
-                    text,
+                file_path = save_uploaded_file(uploaded_file)
+                loaded_file = DocumentLoader(file_path=file_path, mode="pypdf").load()
+                chunks = DocumentSplitter(
                     chunk_size=TEXT_CHUNK_SIZE,
                     overlap=CHUNK_OVERLAP_SIZE,
-                    to_string=False,
                     tokenization=True,
-                )
-                embeddings = generate_embeddings(chunks)  # type: ignore
+                    mode="recursive",
+                ).split(loaded_file)
+                embeddings = EmbeddingModel().embed_documents(chunks)  # type: ignore
 
                 documents_to_index = [
                     {
@@ -136,7 +121,6 @@ def render_upload_page() -> None:
                 st.session_state["documents"].append(
                     {
                         "filename": uploaded_file.name,
-                        "content": text,
                         "file_path": file_path,
                     }
                 )
@@ -171,23 +155,6 @@ def render_upload_page() -> None:
                         st.session_state["deleted_file"] = doc["filename"]
                         time.sleep(0.5)
                         st.rerun()
-
-
-def save_uploaded_file(uploaded_file: UploadedFile) -> str:
-    """
-    Saves an uploaded file from Streamlit to the local file system (i.e., given directory).
-
-    :param uploaded_file: uploaded file instance from Streamlit
-    :type uploaded_file: UploadedFile
-    :return: file path where the uploaded file is saved
-    :rtype: str
-    """
-    UPLOAD_DIR = "uploaded_files"  # noqa N806
-    file_path = os.path.join(UPLOAD_DIR, uploaded_file.name)
-    with open(file_path, "wb") as f:
-        f.write(uploaded_file.getbuffer())
-    logger.info(f"File '{uploaded_file.name}' saved to '{file_path}'.")
-    return file_path
 
 
 if __name__ == "__main__":
