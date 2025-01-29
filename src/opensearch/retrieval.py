@@ -10,8 +10,10 @@ The main class is OpenSearchRetriever with main methods:
 
 # Import packages and modules
 
+import typing
 from typing import Any, Dict, List
 
+from langchain_core.documents import Document
 from typing_extensions import Self
 
 from src.constants import (
@@ -37,11 +39,44 @@ class OpenSearchRetriever(OpenSearchClient):
         """
         super().__init__()
 
+    @staticmethod
+    @typing.no_type_check
+    def search_to_document(
+        search_result: Dict[str, Any],
+    ) -> Document:
+        """
+        Function to extract Document object from the search results.
+
+        :param search_results: single result from the context search
+        :type search_results: str
+        :return: Langchain Document object with page_content, metadata (i.e., source and page number)
+        :rtype: Document
+        """
+        search_result = search_result.get("_source").get("text")
+        content_start = search_result.find("page_content='") + 14
+        content_end = search_result.find("' metadata=")
+        page_content = search_result[content_start:content_end]
+
+        # Extract metadata between curly braces
+        metadata_start = search_result.find("{")
+        metadata_end = search_result.find("}") + 1
+        metadata_str = search_result[metadata_start:metadata_end]
+        metadata = eval(metadata_str)
+        document = Document(
+            page_content=page_content,
+            metadata={
+                "source": metadata.get("source").split("/")[-1].split(".")[0],
+                "page_number": metadata.get("page") + 1,  # Page numbers start from 0
+            },
+        )
+
+        return document
+
     def lexical_search(
         self: Self,
         query_text: str,
         top_k: int = 5,
-    ) -> List[Dict[str, Any]]:
+    ) -> List[Document]:
         """
         Method that performs a lexical search using BM25.
 
@@ -51,8 +86,8 @@ class OpenSearchRetriever(OpenSearchClient):
         :type query_text: str
         :param top_k: the number of search results to return, defaults to 5
         :type top_k: int, optional
-        :return: a list of serach results from OpenSearch
-        :rtype: List[Dict[str, Any]]
+        :return: a list of serach results from OpenSearch formatted as Langchain Document objects
+        :rtype: List[Document]
         """
         query_body = {
             "_source": {"exclude": ["embedding"]},  # Exclude embeddings from the results
@@ -77,14 +112,16 @@ class OpenSearchRetriever(OpenSearchClient):
 
         # Type casting for compatibility with expected return type
         hits: List[Dict[str, Any]] = response["hits"]["hits"]
-        return hits
+        logger.info("Converting search results into Langchain document objects.")
+        documents = [self.search_to_document(search_result=search_result) for search_result in hits]
+        return documents
 
     def vector_search(
         self: Self,
         query_text: str,
         query_embedding: List[float],
         top_k: int = 5,
-    ) -> List[Dict[str, Any]]:
+    ) -> List[Document]:
         """
         Method that performs a vector search using ANN.
         To have more info about the ANN algorithm refer to the OpenSearch
@@ -98,8 +135,8 @@ class OpenSearchRetriever(OpenSearchClient):
         :type query_embedding: List[float]
         :param top_k: the number of top results to retrieve, defaults to 5
         :type top_k: int, optional
-        :return: a list of serach results from OpenSearch
-        :rtype: List[Dict[str, Any]]
+        :return: a list of serach results from OpenSearch formatted as Langchain Document objects
+        :rtype: List[Document]
         """
         query_body = {
             "_source": {"exclude": ["embedding"]},  # Exclude embeddings from the results
@@ -125,14 +162,16 @@ class OpenSearchRetriever(OpenSearchClient):
 
         # Type casting for compatibility with expected return type
         hits: List[Dict[str, Any]] = response["hits"]["hits"]
-        return hits
+        logger.info("Converting search results into Langchain document objects.")
+        documents = [self.search_to_document(search_result=search_result) for search_result in hits]
+        return documents
 
     def hybrid_search(
         self: Self,
         query_text: str,
         query_embedding: List[float],
         top_k: int = 5,
-    ) -> List[Dict[str, Any]]:
+    ) -> List[Document]:
         """
         Method that performs a hybrid search combining text-based and vector-based queries
         with respective BM25 and ANN algorithms.
@@ -145,8 +184,8 @@ class OpenSearchRetriever(OpenSearchClient):
         :type query_embedding: List[float]
         :param top_k: the number of top results to retrieve, defaults to 5
         :type top_k: int, optional
-        :return: a list of serach results from OpenSearch
-        :rtype: List[Dict[str, Any]]
+        :return: a list of serach results from OpenSearch formatted as Langchain Document objects
+        :rtype: List[Document]
         """
         query_body = {
             "_source": {"exclude": ["embedding"]},  # Exclude embeddings from the results
@@ -185,4 +224,6 @@ class OpenSearchRetriever(OpenSearchClient):
 
         # Type casting for compatibility with expected return type
         hits: List[Dict[str, Any]] = response["hits"]["hits"]
-        return hits
+        logger.info("Converting search results into Langchain document objects.")
+        documents = [self.search_to_document(search_result=search_result) for search_result in hits]
+        return documents
