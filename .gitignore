@@ -21,3 +21,5 @@ uploaded_files/*
 sketch.txt
 __pycache__
 TODO.md
+.vscode
+notes
