@@ -10,12 +10,32 @@ The main functions defined in the module are:
 
 # Import packages and modules
 
+import os
 import re
 from typing import Any, List, Literal
+
+from streamlit.runtime.uploaded_file_manager import UploadedFile
 
 from src.logging import logger
 
 # Define UDFs
+
+
+def save_uploaded_file(uploaded_file: UploadedFile) -> str:
+    """
+    Saves an uploaded file from Streamlit to the local file system (i.e., given directory).
+
+    :param uploaded_file: uploaded file instance from Streamlit
+    :type uploaded_file: UploadedFile
+    :return: file path where the uploaded file is saved
+    :rtype: str
+    """
+    UPLOAD_DIR = "uploaded_files"  # noqa N806
+    file_path = os.path.join(UPLOAD_DIR, uploaded_file.name)
+    with open(file_path, "wb") as f:
+        f.write(uploaded_file.getbuffer())
+    logger.info(f"File '{uploaded_file.name}' saved to '{file_path}'.")
+    return file_path
 
 
 def check_string_list(
