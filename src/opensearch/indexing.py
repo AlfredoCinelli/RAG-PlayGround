@@ -108,7 +108,7 @@ class OpenSearchIndex(OpenSearchClient):
 
         for doc in documents:
             doc_id = doc["doc_id"]
-            embedding_list = doc["embedding"].tolist()
+            embedding_list = doc["embedding"]
             document_name = doc["document_name"]
 
             # Prefix each document's text with "passage: " for the asymmetric embedding model
