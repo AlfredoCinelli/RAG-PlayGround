@@ -22,10 +22,9 @@ from typing import Any, Dict, Iterator, List, Literal, Mapping
 import ollama
 import pandas as pd
 import streamlit as st
-from sentence_transformers.cross_encoder import CrossEncoder
 
-from src.constants import ASSYMETRIC_EMBEDDING, MODEL_NAMES, RERANKER_MODEL_PATH
-from src.embeddings import generate_embeddings
+from src.constants import ASSYMETRIC_EMBEDDING, MODEL_NAMES
+from src.encoders import EmbeddingModel, RerankerModel
 from src.logging import logger
 from src.opensearch.retrieval import OpenSearchRetriever
 
@@ -224,28 +223,29 @@ def generate_response_streaming(
     if use_rag is True:
         logger.info("Performing RAG search.")
         retriever = OpenSearchRetriever()
+        embedding = EmbeddingModel()
         # Apply the chosen search type
         match search_type:
             case "hybrid":
                 logger.info("Performing hybrid search.")
                 prefixed_query = f"passage: {query}" if ASSYMETRIC_EMBEDDING else f"{query}"
-                query_embedding = generate_embeddings(
+                query_embedding = embedding.embed_query(
                     prefixed_query,
                 )
                 search_results = retriever.hybrid_search(
                     query,
-                    query_embedding,  # type: ignore
+                    query_embedding,
                     top_k=num_results,
                 )
                 logger.info("Hybrid search completed.")
             case "vector":
                 logger.info("Performing vector search.")
-                query_embedding = generate_embeddings(
+                query_embedding = embedding.embed_query(
                     query,
                 )
                 search_results = retriever.vector_search(
                     query,
-                    query_embedding,  # type: ignore
+                    query_embedding,
                     top_k=num_results,
                 )
                 logger.info("Vector search completed.")
@@ -258,7 +258,7 @@ def generate_response_streaming(
                 logger.info("Lexical search completed.")
             case "reranking":
                 logger.info("Performing reranking on lexical and vector search results.")
-                query_embedding = generate_embeddings(
+                query_embedding = embedding.embed_query(
                     query,
                 )
                 lexical_search_results = retriever.lexical_search(
@@ -267,10 +267,10 @@ def generate_response_streaming(
                 )
                 vector_search_results = retriever.vector_search(
                     query,
-                    query_embedding,  # type: ignore
+                    query_embedding,
                     top_k=num_results,
                 )
-                search_results = rerank_search_results(
+                search_results = RerankerModel().rerank_search_results(
                     vector_search_results=vector_search_results,
                     lexical_search_results=lexical_search_results,
                     query=query,
@@ -278,11 +278,8 @@ def generate_response_streaming(
                 )
 
         # Collect text from search results
-        for result in search_results:
-            context_components = get_context_components(
-                result["_source"]["text"],
-            )
-            context += f"Document: {context_components.get('document_name')}, page: {context_components.get('document_page_number')}, content: \n{context_components.get('document_text')}\n\n"
+        for search_result in search_results:
+            context += f"Document: {search_result.metadata.get('source')}, page: {search_result.metadata.get('page_number')}, content: \n{search_result.page_content}\n\n"  # type: ignore
         logger.info(
             f"Successfully extracted context components and assembled following context: {context}."
         )
@@ -292,95 +289,6 @@ def generate_response_streaming(
     prompt = prompt_template(query, context, history, return_sources)
 
     return run_ollama_streaming(model, prompt, temperature)
-
-
-def aggregate_search_results(
-    lexical_search_results: List[Dict[str, Any]],
-    vector_search_results: List[Dict[str, Any]],
-) -> Dict[str, Dict[str, Any]]:
-    """
-    Function to aggregate results from lexical and vector search.
-    It gives back a dictionary with lexical and vector search results
-    as values and extracted text as key.
-
-    :param lexical_search_results: results from lexical search
-    :type lexical_search_results: List[Dict[str, Any]]
-    :param vector_search_results: results from vector search
-    :type vector_search_results: List[Dict[str, Any]]
-    :return: dictionary with lexical and vector search results as values and extracted text as key
-    :rtype: Dict[str, Dict[str, Any]]
-    """
-    aggregated_search_results = {}
-    logger.info("Aggregating results from lexical and vector search.")
-
-    for lexical_result, vector_result in zip(
-        lexical_search_results, vector_search_results, strict=False
-    ):
-        lexical_document, vector_document = (
-            get_context_components(
-                lexical_result["_source"]["text"],
-            ).get("document_text"),
-            get_context_components(
-                vector_result["_source"]["text"],
-            ).get("document_text"),
-        )
-        (
-            aggregated_search_results[lexical_document],
-            aggregated_search_results[vector_document],
-        ) = (
-            lexical_result,
-            vector_result,
-        )
-
-    logger.info("Successfully aggregated results from lexical and vector search.")
-
-    return aggregated_search_results  # type: ignore
-
-
-def rerank_search_results(
-    vector_search_results: List[Dict[str, Any]],
-    lexical_search_results: List[Dict[str, Any]],
-    query: str,
-    top_k: int = 5,
-) -> List[Dict[str, Any]]:
-    """
-    Function that applies a cross-encoder to rerank search results.
-    The aim of the function is to rerank the results from lexical and vector search.
-
-    :param vector_search_results: results from vector search
-    :type vector_search_results: List[Dict[str, Any]]
-    :param lexical_search_results: results from lexical search
-    :type lexical_search_results: List[Dict[str, Any]]
-    :param query: user query
-    :type query: str
-    :param top_k: number of results to retrieve, defaults to 5
-    :type top_k: int, optional
-    :return: reranked results from both lexical and vector search results
-    :rtype: List[Dict[str, Any]]
-    """
-    logger.info("Aggregating results from lexical and vector search.")
-    aggregated_search_results = aggregate_search_results(
-        lexical_search_results,
-        vector_search_results,
-    )
-    logger.info(f"Using model {RERANKER_MODEL_PATH} as cross-encoder to rerank search results.")
-    model = CrossEncoder(RERANKER_MODEL_PATH)
-    corpus = list(aggregated_search_results.keys())
-
-    ranks = model.rank(
-        query=query,
-        documents=corpus,
-        top_k=top_k,
-    )
-    logger.info(f"Successfully reranked search results with {top_k} results.")
-
-    reranked_corpus = [corpus[rank["corpus_id"]] for rank in ranks]  # type: ignore
-    reranked_search_results = {
-        key: aggregated_search_results[key]
-        for key in reranked_corpus
-        if key in aggregated_search_results
-    }
-    return list(reranked_search_results.values())
 
 
 def dump_chat(
